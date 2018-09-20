@@ -2,7 +2,7 @@
 
 /**
  * Remove TimedOut Server
- * @param {string} id - the server id
+ * @param {string} lastHeartbeat - the last heartbeat
  */
 function removedTimedOutServer(lastHeartbeat) {
     var result = __.filter(function (doc) {

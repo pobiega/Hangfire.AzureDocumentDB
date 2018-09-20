@@ -34,6 +34,9 @@ function setRangeHash(key, sources) {
 
     /**
      * Matched the source with the current hash document
+     * @param {object} docs - The array of documents
+     * @param {object} source - the document
+     * @return {object} the updated source document
      */
     function match(docs, source) {
         for (var index = 0; index < docs.length; index++) {

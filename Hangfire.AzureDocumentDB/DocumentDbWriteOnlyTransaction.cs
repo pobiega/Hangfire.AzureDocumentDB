@@ -14,19 +14,19 @@ using Hangfire.Azure.Documents.Helper;
 
 namespace Hangfire.Azure
 {
-    internal class DocumentDbWriteOnlyTransaction : IWriteOnlyTransaction
+    internal class DocumentDbWriteOnlyTransaction : JobStorageTransaction
     {
         private readonly DocumentDbConnection connection;
         private readonly List<Action> commands = new List<Action>();
 
         public DocumentDbWriteOnlyTransaction(DocumentDbConnection connection) => this.connection = connection;
         private void QueueCommand(Action command) => commands.Add(command);
-        public void Commit() => commands.ForEach(command => command());
-        public void Dispose() { }
+        public override void Commit() => commands.ForEach(command => command());
+        public override void Dispose() { }
 
         #region Queue
 
-        public void AddToQueue(string queue, string jobId)
+        public override void AddToQueue(string queue, string jobId)
         {
             if (string.IsNullOrEmpty(queue)) throw new ArgumentNullException(nameof(queue));
             if (string.IsNullOrEmpty(jobId)) throw new ArgumentNullException(nameof(jobId));
@@ -40,7 +40,7 @@ namespace Hangfire.Azure
 
         #region Counter
 
-        public void DecrementCounter(string key)
+        public override void DecrementCounter(string key)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
 
@@ -58,7 +58,7 @@ namespace Hangfire.Azure
             });
         }
 
-        public void DecrementCounter(string key, TimeSpan expireIn)
+        public override void DecrementCounter(string key, TimeSpan expireIn)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
             if (expireIn.Duration() != expireIn) throw new ArgumentException(@"The `expireIn` value must be positive.", nameof(expireIn));
@@ -78,7 +78,7 @@ namespace Hangfire.Azure
             });
         }
 
-        public void IncrementCounter(string key)
+        public override void IncrementCounter(string key)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
 
@@ -96,7 +96,7 @@ namespace Hangfire.Azure
             });
         }
 
-        public void IncrementCounter(string key, TimeSpan expireIn)
+        public override void IncrementCounter(string key, TimeSpan expireIn)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
             if (expireIn.Duration() != expireIn) throw new ArgumentException(@"The `expireIn` value must be positive.", nameof(expireIn));
@@ -120,7 +120,7 @@ namespace Hangfire.Azure
 
         #region Job
 
-        public void ExpireJob(string jobId, TimeSpan expireIn)
+        public override void ExpireJob(string jobId, TimeSpan expireIn)
         {
             if (string.IsNullOrEmpty(jobId)) throw new ArgumentNullException(nameof(jobId));
             if (expireIn.Duration() != expireIn) throw new ArgumentException(@"The `expireIn` value must be positive.", nameof(expireIn));
@@ -134,7 +134,7 @@ namespace Hangfire.Azure
             });
         }
 
-        public void PersistJob(string jobId)
+        public override void PersistJob(string jobId)
         {
             if (string.IsNullOrEmpty(jobId)) throw new ArgumentNullException(nameof(jobId));
 
@@ -150,7 +150,7 @@ namespace Hangfire.Azure
 
         #region State
 
-        public void SetJobState(string jobId, IState state)
+        public override void SetJobState(string jobId, IState state)
         {
             if (string.IsNullOrEmpty(jobId)) throw new ArgumentNullException(nameof(jobId));
             if (state == null) throw new ArgumentNullException(nameof(state));
@@ -172,7 +172,7 @@ namespace Hangfire.Azure
             });
         }
 
-        public void AddJobState(string jobId, IState state)
+        public override void AddJobState(string jobId, IState state)
         {
             if (string.IsNullOrEmpty(jobId)) throw new ArgumentNullException(nameof(jobId));
             if (state == null) throw new ArgumentNullException(nameof(state));
@@ -197,7 +197,7 @@ namespace Hangfire.Azure
 
         #region Set
 
-        public void RemoveFromSet(string key, string value)
+        public override void RemoveFromSet(string key, string value)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
             if (string.IsNullOrEmpty(value)) throw new ArgumentNullException(nameof(value));
@@ -210,9 +210,9 @@ namespace Hangfire.Azure
             });
         }
 
-        public void AddToSet(string key, string value) => AddToSet(key, value, 0.0);
+        public override void AddToSet(string key, string value) => AddToSet(key, value, 0.0);
 
-        public void AddToSet(string key, string value, double score)
+        public override void AddToSet(string key, string value, double score)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
             if (string.IsNullOrEmpty(value)) throw new ArgumentNullException(nameof(value));
@@ -233,11 +233,56 @@ namespace Hangfire.Azure
             });
         }
 
+        public override void PersistSet(string key)
+        {
+            if (key == null) throw new ArgumentNullException(nameof(key));
+
+            QueueCommand(() =>
+            {
+                Uri spPersistSet = UriFactory.CreateStoredProcedureUri(connection.Storage.Options.DatabaseName, connection.Storage.Options.CollectionName, "persistSet");
+                Task<StoredProcedureResponse<bool>> task = connection.Storage.Client.ExecuteStoredProcedureAsync<bool>(spPersistSet, key);
+                task.Wait();
+            });
+        }
+        public override void ExpireSet(string key, TimeSpan expireIn)
+        {
+            if (key == null) throw new ArgumentNullException(nameof(key));
+
+            QueueCommand(() =>
+            {
+                Uri spExpireSet = UriFactory.CreateStoredProcedureUri(connection.Storage.Options.DatabaseName, connection.Storage.Options.CollectionName, "expireSet");
+                Task<StoredProcedureResponse<bool>> task = connection.Storage.Client.ExecuteStoredProcedureAsync<bool>(spExpireSet, key, DateTime.UtcNow.Add(expireIn).ToEpoch());
+                task.Wait();
+            });
+        }
+
+        public override void AddRangeToSet(string key, IList<string> items)
+        {
+            if (key == null) throw new ArgumentNullException(nameof(key));
+            if (items == null) throw new ArgumentNullException(nameof(items));
+
+            QueueCommand(() =>
+            {
+                List<Set> sets = items.Select(value => new Set
+                {
+                    Key = key,
+                    Value = value,
+                    Score = 0.00,
+                    CreatedOn = DateTime.UtcNow
+                }).ToList();
+
+                Uri spAddRangeToSet = UriFactory.CreateStoredProcedureUri(connection.Storage.Options.DatabaseName, connection.Storage.Options.CollectionName, "addRangeToSet");
+                Task<StoredProcedureResponse<int>> task = connection.Storage.Client.ExecuteStoredProcedureAsync<int>(spAddRangeToSet, sets);
+                task.Wait();
+
+            });
+        }
+
         #endregion
 
         #region  Hash
 
-        public void RemoveHash(string key)
+        public override void RemoveHash(string key)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
 
@@ -249,7 +294,7 @@ namespace Hangfire.Azure
             });
         }
 
-        public void SetRangeInHash(string key, IEnumerable<KeyValuePair<string, string>> keyValuePairs)
+        public override void SetRangeInHash(string key, IEnumerable<KeyValuePair<string, string>> keyValuePairs)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
             if (keyValuePairs == null) throw new ArgumentNullException(nameof(keyValuePairs));
@@ -273,7 +318,7 @@ namespace Hangfire.Azure
 
         #region List
 
-        public void InsertToList(string key, string value)
+        public override void InsertToList(string key, string value)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
             if (string.IsNullOrEmpty(value)) throw new ArgumentNullException(nameof(value));
@@ -292,7 +337,7 @@ namespace Hangfire.Azure
             });
         }
 
-        public void RemoveFromList(string key, string value)
+        public override void RemoveFromList(string key, string value)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
             if (string.IsNullOrEmpty(value)) throw new ArgumentNullException(nameof(value));
@@ -305,7 +350,7 @@ namespace Hangfire.Azure
             });
         }
 
-        public void TrimList(string key, int keepStartingFrom, int keepEndingAt)
+        public override void TrimList(string key, int keepStartingFrom, int keepEndingAt)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
 

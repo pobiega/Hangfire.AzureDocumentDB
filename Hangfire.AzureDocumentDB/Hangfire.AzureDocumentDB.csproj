@@ -30,25 +30,29 @@
         <DocumentationFile>bin\Release\netstandard2.0\Hangfire.AzureDocumentDB.xml</DocumentationFile>
     </PropertyGroup>
     <ItemGroup>
+        <None Remove="StoredProcedure\addRangeToSet.js" />
+        <None Remove="StoredProcedure\expireSet.js" />
+        <None Remove="StoredProcedure\persistSet.js" />
+    </ItemGroup>
+    <ItemGroup>
         <PackageReference Include="Hangfire.Core" Version="1.6.17" />
         <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
         <PackageReference Include="System.ValueTuple" Version="4.4.0" />
     </ItemGroup>
     <ItemGroup>
+        <EmbeddedResource Include="StoredProcedure\addRangeToSet.js" />
         <EmbeddedResource Include="StoredProcedure\deleteExpiredDocuments.js" />
-    </ItemGroup>
-    <ItemGroup>
         <EmbeddedResource Include="StoredProcedure\addToSet.js" />
         <EmbeddedResource Include="StoredProcedure\expireJob.js" />
+        <EmbeddedResource Include="StoredProcedure\expireSet.js" />
         <EmbeddedResource Include="StoredProcedure\persistJob.js" />
+        <EmbeddedResource Include="StoredProcedure\persistSet.js" />
         <EmbeddedResource Include="StoredProcedure\trimList.js" />
         <EmbeddedResource Include="StoredProcedure\removeFromList.js" />
         <EmbeddedResource Include="StoredProcedure\removeFromSet.js" />
         <EmbeddedResource Include="StoredProcedure\removeHash.js" />
         <EmbeddedResource Include="StoredProcedure\setJobState.js" />
         <EmbeddedResource Include="StoredProcedure\setRangeHash.js" />
-    </ItemGroup>
-    <ItemGroup>
         <EmbeddedResource Include="StoredProcedure\announceServer.js" />
         <EmbeddedResource Include="StoredProcedure\heartbeatServer.js" />
         <EmbeddedResource Include="StoredProcedure\removedTimedOutServer.js" />
