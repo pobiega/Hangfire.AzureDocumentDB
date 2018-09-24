@@ -2,29 +2,72 @@
 
 /**
  * Expiration manager to delete old expired documents
- * @param {number} docType - The type of the document to delete
+ * @param {number} type - The type of the document to delete
  * @param {number} expireOn - The unix timestamp to expire documents
  */
-function deleteExpiredDocuments(docType, expireOn) {
-    var result = __.filter(function (doc) {
-        return doc.type === docType && doc.expire_on <= expireOn;
-    }, function (err, docs) {
-        if (err) throw err;
+function deleteExpiredDocuments(type, expireOn) {
+    let response = getContext().getResponse();
+    let filter = (doc) => doc.type === type && doc.expire_on < expireOn;
+    let deleted = 0;
 
-        var deleted = 0;
-        for (var index = 0; index < docs.length; index++) {
-            var doc = docs[index];
-            if (docType === 4 && doc.type === docType && doc.counter_type === 2) continue;
-            var isAccepted = __.deleteDocument(doc._self, function (error) {
-                if (error) throw error;
-            });
+    let result = __.filter(filter, {}, (error, docs) => {
+        if (error) throw error;
 
-            if (!isAccepted) throw new Error("Failed to delete expired documents");
-            else deleted += 1;
+        if (docs.length === 0) {
+            response.setBody(deleted);
+            return;
         }
 
-        getContext().getResponse().setBody(deleted);
+        // capture the docs length
+        let count = docs.length;
+
+        while (docs.length > 0) {
+            tryDeleteDocument(docs.shift(), callback);
+        }
+
+        // throw ERROR when counts don't match
+        if (count !== deleted) {
+            throw new Error("Unable to delete all the expired documents");
+        }
     });
 
-    if (!result.isAccepted) throw new Error("The call was not accepted");
+    if (!result) {
+        response.setBody(deleted);
+    }
+
+    /**
+     * Deletes the document 
+     * @param {any} doc - the document
+     * @param {function} cb - the callback function to handle error and move to next document
+     */
+    function tryDeleteDocument(doc, cb) {
+
+        // if it is a RAW counter; then ignore
+        if (doc.type === 4 && doc.counter_type === 1) {
+            cb(undefined);
+            return;
+        }
+
+        // If the request was accepted, callback will be called.
+        // Otherwise report current count back to the caller, 
+        // which will call the method again with remaining set of docs.
+        __.deleteDocument(doc._self, {}, cb);
+    }
+
+    /**
+    * Callback to handle after delete of document
+    * @param {object} error - the error object
+    */
+    function callback(error) {
+        if (error) throw error;
+
+        // increment the counter
+        deleted += 1;
+
+        if (docs.length === 0) {
+            response.setBody(deleted);
+        } else {
+            tryDeleteDocument(docs.shift(), callback);
+        }
+    }
 }
