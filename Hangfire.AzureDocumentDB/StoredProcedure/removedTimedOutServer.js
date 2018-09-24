@@ -2,28 +2,56 @@
 
 /**
  * Remove TimedOut Server
- * @param {string} id - the server id
+ * @param {number} lastHeartbeat - the last heartbeat time
  */
 function removedTimedOutServer(lastHeartbeat) {
-    var result = __.filter(function (doc) {
-        return doc.type === 1 && doc.last_heartbeat < lastHeartbeat;
-    }, function (err, docs) {
+    let response = getContext().getResponse();
+    let filter = (doc) => doc.type === 1 && doc.last_heartbeat < lastHeartbeat;
+    let deleted = 0;
+
+    let result = __.filter(filter, (err, docs) => {
         if (err) throw err;
 
-        var removed = 0;
-        for (var index = 0; index < docs.length; index++) {
-            var doc = docs[index];
-
-            var isAccepted = __.deleteDocument(doc._self, function (error) {
-                if (error) throw error;
-            });
-
-            if (!isAccepted) throw new Error("Failed to remove timeout server");
-            else removed += 1;
+        if (docs.length === 0) {
+            response.setBody(deleted);
+            return;
         }
 
-        getContext().getResponse().setBody(removed);
+        while (docs.length > 0) {
+            tryDeleteServer(docs.shift(), callback);
+        }
     });
 
-    if (!result.isAccepted) throw new Error("The call was not accepted");
+    if (!result.isAccepted) {
+        response.setBody(deleted);
+    }
+
+    /**
+     * Deletes the server 
+     * @param {any} doc - the server document
+     * @param {function} cb - the callback function to handle error and move to next server
+     */
+    function tryDeleteServer(doc, cb) {
+        // If the request was accepted, callback will be called.
+        // Otherwise report current count back to the caller, 
+        // which will call the method again with remaining set of docs.
+        __.deleteDocument(doc._self, {}, cb);
+    }
+
+    /**
+    * Callback to handle after delete of document
+    * @param {object} error - the error object
+    */
+    function callback(error) {
+        if (error) throw error;
+
+        // increment the counter
+        deleted += 1;
+
+        if (docs.length === 0) {
+            response.setBody(deleted);
+        } else {
+            tryDeleteServer(docs.shift(), callback);
+        }
+    }
 }

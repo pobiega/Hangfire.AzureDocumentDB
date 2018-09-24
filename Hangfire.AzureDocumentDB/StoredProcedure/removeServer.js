@@ -5,20 +5,27 @@
  * @param {string} id - the server id
  */
 function removeServer(id) {
-    var result = __.filter(function (doc) {
-        return doc.type === 1 && doc.server_id === id;
-    }, function (err, docs) {
+    let response = getContext().getResponse();
+    let filter = (doc) => doc.type === 1 && doc.server_id === id;
+
+    let result = __.filter(filter, (err, docs) => {
         if (err) throw err;
         if (docs.length === 0) throw new Error("No server found for id :" + id);
         if (docs.length > 1) throw new Error("Found more than one server for id :" + id);
 
-        var isAccepted = __.deleteDocument(docs[0]._self, function (error) {
+        let doc = docs.shift();
+        let deleteResult = __.deleteDocument(doc._self, function (error) {
             if (error) throw error;
         });
 
-        if (!isAccepted) throw new Error("Failed to remove the server");
-        else getContext().getResponse().setBody(true);
+        if (!deleteResult) {
+            throw new Error("Failed to remove the server");
+        } else {
+            response.setBody(true);
+        }
     });
 
-    if (!result.isAccepted) throw new Error("The call was not accepted");
+    if (!result.isAccepted) {
+        throw new Error("The call was not accepted");
+    }
 }
