@@ -47,7 +47,6 @@ namespace Hangfire.Azure
                 Arguments = invocationData.Arguments,
                 CreatedOn = createdAt,
                 ExpireOn = createdAt.Add(expireIn),
-
                 Parameters = parameters.Select(p => new Parameter
                 {
                     Name = p.Key,
@@ -58,10 +57,7 @@ namespace Hangfire.Azure
             Task<ResourceResponse<Document>> task = Storage.Client.CreateDocumentAsync(Storage.CollectionUri, entityJob);
             task.Wait();
 
-            if (task.Result.StatusCode == HttpStatusCode.Created || task.Result.StatusCode == HttpStatusCode.OK)
-            {
-                return entityJob.Id;
-            }
+            if (task.Result.StatusCode == HttpStatusCode.Created || task.Result.StatusCode == HttpStatusCode.OK) return entityJob.Id;
 
             return string.Empty;
         }
@@ -125,28 +121,25 @@ namespace Hangfire.Azure
         {
             if (jobId == null) throw new ArgumentNullException(nameof(jobId));
 
-            SqlQuerySpec sql = new SqlQuerySpec
+            // get the job document 
+            Uri uri = UriFactory.CreateDocumentUri(Storage.Options.DatabaseName, Storage.Options.CollectionName, jobId);
+            Task<DocumentResponse<Documents.Job>> jobTask = Storage.Client.ReadDocumentAsync<Documents.Job>(uri);
+            if (jobTask.Result != null)
             {
-                QueryText = "SELECT TOP 1 * FROM doc WHERE doc.type = @type AND doc.job_id = @jobId ORDER BY doc.created_on DESC",
-                Parameters = new SqlParameterCollection
-                 {
-                     new SqlParameter("@jobId", jobId),
-                     new SqlParameter("@type", DocumentTypes.State)
-                 }
-            };
+                // get the state document
+                uri = UriFactory.CreateDocumentUri(Storage.Options.DatabaseName, Storage.Options.CollectionName, ((Documents.Job)jobTask.Result).StateId);
+                Task<DocumentResponse<State>> stateTask = Storage.Client.ReadDocumentAsync<State>(uri);
 
-            State state = Storage.Client.CreateDocumentQuery<State>(Storage.CollectionUri, sql)
-                .AsEnumerable()
-                .FirstOrDefault();
-
-            if (state != null)
-            {
-                return new StateData
+                if (stateTask.Result != null)
                 {
-                    Name = state.Name,
-                    Reason = state.Reason,
-                    Data = state.Data
-                };
+                    State state = stateTask.Result;
+                    return new StateData
+                    {
+                        Name = state.Name,
+                        Reason = state.Reason,
+                        Data = state.Data
+                    };
+                }
             }
 
             return null;
