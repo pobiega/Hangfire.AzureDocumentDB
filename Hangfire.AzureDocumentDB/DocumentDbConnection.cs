@@ -456,9 +456,10 @@ namespace Hangfire.Azure
             return Storage.Client.CreateDocumentQuery<List>(Storage.CollectionUri, queryOptions)
                 .Where(l => l.DocumentType == DocumentTypes.List && l.Key == key)
                 .OrderByDescending(l => l.CreatedOn)
-                .Select(l => l.Value)
                 .AsEnumerable()
-                .Skip(startingFrom).Take(endingAt)
+                .Select((l, i) => new { l.Value, Index = i })
+                .Where(l => l.Index >= startingFrom && l.Index <= endingAt)
+                .Select(l => l.Value)
                 .ToList();
         }
 
