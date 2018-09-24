@@ -6,43 +6,35 @@
  * @param {Array<Object>} sources - the array of hash
  */
 function setRangeHash(key, sources) {
-    var result = __.filter(function (doc) {
-        return doc.type === 6 && doc.key === key;
-    }, function (err, docs) {
+    let response = getContext().getResponse();
+    let filter = (doc) => doc.type === 6 && doc.key === key;
+    let affected = 0;
+
+    let result = __.filter(filter, (err, docs) => {
         if (err) throw err;
 
-        var hashes = [];
-        for (var index = 0; index < sources.length; index++) {
-            var hash = match(docs, sources[index]);
-            hashes.push(hash);
-        }
+        sources.forEach(source => {
+            let hash = docs.find(h => h.field === source.field);
+            if (hash) {
+                hash.value = source.value;
+            } else {
+                hash = source;
+            }
 
-        // upsert all the hash documents
-        for (var j = 0; j < hashes.length; j++) {
-            var doc = hashes[j];
-            var isAccepted = __.upsertDocument(__.getSelfLink(), doc, function(error) {
+            let upsertResult = __.upsertDocument(__.getSelfLink(), hash, (error) => {
                 if (error) throw error;
+                affected += 1;
             });
 
-            if (!isAccepted) throw new Error("Failed to save hashes");
-        }
+            if (!upsertResult) {
+                throw new Error("Unable to merge the hash documents");
+            }
+        });
 
-        getContext().getResponse().setBody(hashes.length);
+        response.setBody(affected);
     });
 
-    if (!result.isAccepted) throw new Error("The call was not accepted");
-
-    /**
-     * Matched the source with the current hash document
-     */
-    function match(docs, source) {
-        for (var index = 0; index < docs.length; index++) {
-            var doc = docs[index];
-            if (doc.field === source.field && doc.key === source.key) {
-                source.id = doc.id;
-                break;
-            }
-        }
-        return source;
+    if (!result.isAccepted) {
+        throw new Error("The call was not accepted");
     }
 }

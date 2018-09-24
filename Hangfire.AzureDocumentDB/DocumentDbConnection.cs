@@ -368,7 +368,7 @@ namespace Hangfire.Azure
             }).ToArray();
 
             Uri spSetRangeHashUri = UriFactory.CreateStoredProcedureUri(Storage.Options.DatabaseName, Storage.Options.CollectionName, "setRangeHash");
-            Task<StoredProcedureResponse<bool>> task = Storage.Client.ExecuteStoredProcedureAsync<bool>(spSetRangeHashUri, key, sources);
+            Task<StoredProcedureResponse<int>> task = Storage.Client.ExecuteStoredProcedureAsync<int>(spSetRangeHashUri, key, sources);
             task.Wait();
         }
 
@@ -382,7 +382,7 @@ namespace Hangfire.Azure
                 Parameters = new SqlParameterCollection
                 {
                     new SqlParameter("@key", key),
-                    new SqlParameter("@type", DocumentTypes.Hash),
+                    new SqlParameter("@type", DocumentTypes.Hash)
                 }
             };
 
