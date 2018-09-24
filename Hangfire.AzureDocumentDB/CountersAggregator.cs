@@ -23,8 +23,13 @@ namespace Hangfire.Azure
         private static readonly TimeSpan defaultLockTimeout = TimeSpan.FromMinutes(2);
         private readonly DocumentDbStorage storage;
         private readonly FeedOptions queryOptions = new FeedOptions { MaxItemCount = 1000 };
+        private readonly Uri spAggregateCounterUri;
 
-        public CountersAggregator(DocumentDbStorage storage) => this.storage = storage ?? throw new ArgumentNullException(nameof(storage));
+        public CountersAggregator(DocumentDbStorage storage)
+        {
+            this.storage = storage ?? throw new ArgumentNullException(nameof(storage));
+            spAggregateCounterUri = UriFactory.CreateStoredProcedureUri(storage.Options.DatabaseName, storage.Options.CollectionName, "aggregateCounter");
+        }
 
         public void Execute(CancellationToken cancellationToken)
         {
@@ -37,8 +42,8 @@ namespace Hangfire.Azure
                     .AsEnumerable()
                     .ToList();
 
-                Dictionary<string, (int Sum, DateTime? ExpireOn)> counters = rawCounters.GroupBy(c => c.Key)
-                    .ToDictionary(k => k.Key, v => (Sum: v.Sum(c => c.Value), ExpireOn: v.Max(c => c.ExpireOn)));
+                Dictionary<string, (int Sum, DateTime? ExpireOn, List<Counter> counters)> counters = rawCounters.GroupBy(c => c.Key)
+                    .ToDictionary(k => k.Key, v => (Sum: v.Sum(c => c.Value), ExpireOn: v.Max(c => c.ExpireOn), Counters: v.ToList()));
 
                 Array.ForEach(counters.Keys.ToArray(), key =>
                 {
@@ -64,26 +69,13 @@ namespace Hangfire.Azure
                         else
                         {
                             aggregated.Value += data.Sum;
-                            aggregated.ExpireOn = data.ExpireOn;
+                            aggregated.ExpireOn = new[] { aggregated.ExpireOn, data.ExpireOn }.Max();
                         }
 
-                        Task<ResourceResponse<Document>> task = storage.Client.UpsertDocumentAsync(storage.CollectionUri, aggregated);
-
-                        Task continueTask = task.ContinueWith(t =>
-                        {
-                            if (t.Result.StatusCode == HttpStatusCode.Created || t.Result.StatusCode == HttpStatusCode.OK)
-                            {
-                                string[] deleteCounterIds = rawCounters.Where(c => c.Key == key).Select(c => c.Id).ToArray();
-                                Array.ForEach(deleteCounterIds, id =>
-                                {
-                                    Uri uri = UriFactory.CreateDocumentUri(storage.Options.DatabaseName, storage.Options.CollectionName, id);
-                                    storage.Client.DeleteDocumentAsync(uri).Wait(cancellationToken);
-                                });
-                                logger.Trace($"Total {deleteCounterIds.Length} records from the 'Counter:{aggregated.Key}' were aggregated.");
-                            }
-                        }, cancellationToken, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Current);
-
-                        continueTask.Wait(cancellationToken);
+                        IList<string> deleteCounterIds = data.counters.Select(c => c.Id).ToList();
+                        Task<StoredProcedureResponse<int>> task = storage.Client.ExecuteStoredProcedureAsync<int>(spAggregateCounterUri, aggregated, deleteCounterIds);
+                        task.ContinueWith(t => logger.Trace($"Total {t.Result} records from the 'Counter:{aggregated.Key}' were aggregated."), TaskContinuationOptions.OnlyOnRanToCompletion);
+                        task.Wait(cancellationToken);
                     }
                 });
             }

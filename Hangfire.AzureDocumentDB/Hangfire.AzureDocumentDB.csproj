@@ -35,9 +35,8 @@
         <PackageReference Include="System.ValueTuple" Version="4.4.0" />
     </ItemGroup>
     <ItemGroup>
+        <EmbeddedResource Include="StoredProcedure\aggregateCounter.js" />
         <EmbeddedResource Include="StoredProcedure\deleteExpiredDocuments.js" />
-    </ItemGroup>
-    <ItemGroup>
         <EmbeddedResource Include="StoredProcedure\addToSet.js" />
         <EmbeddedResource Include="StoredProcedure\expireJob.js" />
         <EmbeddedResource Include="StoredProcedure\persistJob.js" />
@@ -47,8 +46,6 @@
         <EmbeddedResource Include="StoredProcedure\removeHash.js" />
         <EmbeddedResource Include="StoredProcedure\setJobState.js" />
         <EmbeddedResource Include="StoredProcedure\setRangeHash.js" />
-    </ItemGroup>
-    <ItemGroup>
         <EmbeddedResource Include="StoredProcedure\announceServer.js" />
         <EmbeddedResource Include="StoredProcedure\heartbeatServer.js" />
         <EmbeddedResource Include="StoredProcedure\removedTimedOutServer.js" />
