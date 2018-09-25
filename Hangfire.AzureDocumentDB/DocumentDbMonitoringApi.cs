@@ -316,7 +316,6 @@ namespace Hangfire.Azure
 
             List<Documents.Queue> queues = storage.Client.CreateDocumentQuery<Documents.Queue>(storage.CollectionUri, sql)
                 .AsEnumerable()
-                .OrderBy(q => q.CreatedOn)
                 .Skip(from).Take(count)
                 .ToList();
 
